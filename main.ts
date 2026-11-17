@@ -1,12 +1,20 @@
-// A working gta6-01 entry (Node 22, standard library only): the game is this directory's
-// game/ folder, plain static files a desktop browser loads offline (game/index.html and its ES
-// modules, no library and no network request), and the program hands it in. It copies game/ and
-// screenshots/ from beside this file to /output and writes /output/dossier.json, the summary the
-// judge reads, with the vendored make.fun library. Only the plumbing, not an open world: Block
-// Dodger, a plain 2D canvas game where a paddle dodges falling blocks and catches coins, with a
-// title screen, score, lives and levels, game over and restart, flat colours and no sound. Build
-// your own open-world crime game in its place (three.js or any library you vendor under game/),
-// put your 3 or 4 PNG or JPEG screenshots in screenshots/ (the first by name is the cover) and run it.
+// SOLMAR HEAT — entrypoint (Node 22, standard library only).
+//
+// The game is this directory's game/ folder: plain static files a desktop browser
+// loads offline (game/index.html and its ES modules, three.js vendored under
+// game/vendor/, no network request at all), and this program hands it in. It copies
+// game/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json, the summary the judge reads, with the vendored make.fun
+// library.
+//
+// The game itself: an original open-world crime game set in Solmar, a sun-soaked
+// coastal city. Drive and walk a 7x7-block city with traffic, pedestrians, a beach
+// and a pier; steal cars, outrun the Solmar PD across five wanted levels, run five
+// story jobs for Mama Rosa, collect street cash, and repair at Pay 'n Spray.
+// HUD with minimap, wanted stars, cash, health, speed and mission objectives;
+// day/night cycle with golden hour and neon nights; synthesized WebAudio sound.
+// Screenshots are real renders of the game (see shots.json for the four staged
+// views: police chase, beach on foot, night run, aerial city).
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
@@ -19,6 +27,15 @@ import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// Fail loudly instead of handing in an empty game: the entry is only valid with
+// a playable index.html and at least the cover screenshot.
+if (!existsSync(join(here, 'game', 'index.html'))) {
+  throw new Error('game/index.html is missing — nothing to hand in');
+}
+if (!existsSync(join(here, 'screenshots', '1-cover.jpg'))) {
+  throw new Error('screenshots/1-cover.jpg (the cover) is missing — take the screenshots first');
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });

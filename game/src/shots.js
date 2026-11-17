@@ -1,79 +1,100 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// shots.js — deterministic staging for the four screenshots. Each shot sets the
+// time of day, the player's car and position, the wanted level and a camera,
+// then lets the simulation run so the frame is alive, not posed.
+//   ?shot=cover  golden-hour police chase down the beach avenue (the cover)
+//   ?shot=street on foot at the pier at sunset, pedestrians and traffic
+//   ?shot=night  downtown at night, neon + police lights
+//   ?shot=city   high wide shot of the whole city at golden hour
+import { PLACES, PALETTE } from './config.js';
+import { addHeat } from './police.js';
+import { startMission } from './missions.js';
+import { makeVehicle } from './vehicles.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+function placePlayerInCar(state, carName, x, z, heading, speed) {
+  const car = state.vehicles.find(v => v.name === carName) ??
+    state.vehicles.find(v => v.kind === 'parked');
+  car.parked = false; car.isPlayerCar = true;
+  car.x = x; car.z = z; car.heading = heading; car.speed = speed;
+  state.car = car; state.inCar = true;
+  state.player.x = x; state.player.z = z;
+  return car;
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
-  }
-  return best;
+function placePlayerOnFoot(state, x, z, heading) {
+  state.player.x = x; state.player.z = z; state.player.heading = heading;
+  state.inCar = false; state.car = null;
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+export function applyShot(state, name) {
+  state.shotMode = name;
+  const S = state;
+  if (name === 'cover') {
+    S.hour = 17.6;
+    // Beach avenue run: south down street x=-23 toward the sea, cops behind.
+    placePlayerInCar(S, 'Rio\u2019s Runner', -23, 148, 0, 26);
+    S.car.heading = 0; S.car.speed = 30;
+    S.cameraYaw = Math.PI + 0.45; S.cameraPitch = 0.3; S.cameraDist = 22;
+    addHeat(S, 3, 'staged chase');
+    startMission(S, 2); // Getaway: the chase IS the job
+    // two pursuit cars close behind, two civilians ahead — the chase reads at once
+    for (const [dx, dz] of [[-5, -12], [5, -16]]) {
+      const cop = makeVehicle(S, 'police', -23 + dx, 148 + dz, 0, { police: true, color: PALETTE.policeWhite, vertical: true });
+      cop.speed = 30; cop.targetSpeed = 34;
+    }
+    for (const [dx, dz] of [[-3, 42], [3, 58]]) {
+      makeVehicle(S, 'traffic', -23 + dx, 148 + dz, 0, { vertical: true, targetSpeed: 12 });
+    }
+    S.autopilot = { throttle: 0.7, steer: 0.02 };
+    S.showToast('JOB 3 · GETAWAY — Lose the cops', 4000);
+  } else if (name === 'street') {
+    S.hour = 17.4; // golden hour from the pier, city skyline ahead
+    placePlayerOnFoot(S, 42, 244, Math.PI); // sand beside the pier, facing the city
+    S.cameraYaw = 0; S.cameraPitch = 0.3; S.cameraDist = 11; // camera on the pier, looking north
+    startMission(S, 0);
+    // pull a few pedestrians onto the sand near the pier so the beach reads alive
+    S.peds.slice(0, 5).forEach((p, i) => {
+      p.x = 20 + i * 5; p.z = 234 + (i % 2) * 7;
+      p.heading = Math.PI * (i % 2 ? 0.9 : 0.1); p.flee = 0; p.down = 0;
+    });
+    // beach-road traffic rolling past ahead
+    makeVehicle(S, 'traffic', -40, 217, Math.PI / 2, { vertical: false, targetSpeed: 11 });
+    makeVehicle(S, 'traffic', 46, 217, -Math.PI / 2, { vertical: false, targetSpeed: 11 });
+  } else if (name === 'night') {
+    S.hour = 22.4;
+    placePlayerInCar(S, 'Coral Comet', -23, 110, Math.PI, 18);
+    S.car.heading = Math.PI; // north up the downtown avenue, mid-block (no pole in frame)
+    S.cameraYaw = 0.35; S.cameraPitch = 0.3; S.cameraDist = 14; S.lockCam = true; // fixed three-quarter rear view
+    addHeat(S, 2, 'staged night');
+    startMission(S, 3); // Night Run
+    S.autopilot = { throttle: 0.55, steer: -0.01 };
+  } else if (name === 'city') {
+    S.hour = 17.9;
+    // aerial establishing shot: high over downtown, sea to the south
+    placePlayerInCar(S, 'Rio\u2019s Runner', -90, 37, Math.PI / 2, 20);
+    S.car.heading = Math.PI / 2; // east along the avenue
+    S.cameraYaw = -2.4; S.cameraPitch = 0.5; S.cameraDist = 95; S.lockCam = true;
+    startMission(S, 0);
+    for (const [dx, dz] of [[-6, -18], [6, -26]]) {
+      const cop = makeVehicle(S, 'police', -90 + dx, 37 + dz, Math.PI / 2, { police: true, color: PALETTE.policeWhite, vertical: false });
+      cop.speed = 22; cop.targetSpeed = 30;
+    }
+    makeVehicle(S, 'traffic', -40, 37, Math.PI / 2, { vertical: false, targetSpeed: 12 });
+    makeVehicle(S, 'traffic', -140, 37, Math.PI / 2, { vertical: false, targetSpeed: 12 });
+    S.autopilot = { throttle: 0.5, steer: 0 };
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  // hide the start menu, show the HUD, run the sim
+  S.started = true;
+  S.hud.menu.style.display = 'none';
+  window.__shotReady = false;
+  // settle in SIM time (headless rendering is slow: wall-clock lies, sim time doesn't).
+  // Run the world ~2.4 sim-seconds so police close in and traffic spreads, then flag ready.
+  const sim0 = S.time;
+  const wall0 = performance.now();
+  const settle = setInterval(() => {
+    if (S.time - sim0 > 2.4 || performance.now() - wall0 > 25000) {
+      clearInterval(settle);
+      window.__shotReady = true;
+      window.__shotName = name;
+    }
+  }, 100);
 }

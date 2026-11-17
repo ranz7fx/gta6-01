@@ -1,5 +1,1 @@
-[
-  { "name": "1-start.jpg", "query": "?shot=start&seed=1" },
-  { "name": "2-play.jpg", "query": "?shot=play&seed=1" },
-  { "name": "3-end.jpg", "query": "?shot=end&seed=1" }
-]
+[{"name":"1-cover.jpg","note":"Golden-hour police chase down the beach avenue, 5 stars, Job 3 Getaway","query":"?shot=cover"},{"name":"2-street.jpg","note":"On foot on the beach by the pier at golden hour, pedestrians and skyline","query":"?shot=street"},{"name":"3-night.jpg","note":"Night run downtown: headlights, neon, 2 stars, Job 4 Night Run","query":"?shot=night"},{"name":"4-city.jpg","note":"Aerial oblique over downtown Solmar at golden hour, traffic and the sea","query":"?shot=city"}]
